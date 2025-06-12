@@ -1,77 +1,73 @@
 const express = require('express');
 const cors = require('cors');
-const mysql = require('mysql2');
-
-const app = express();     
-app.use(cors());           
-app.use(express.json());
-// Configuração do banco MySQL
+const { Pool } = require('pg');
+const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
 require('dotenv').config();
-const db = mysql.createConnection({
-  host: process.env.DB_HOST,
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-  database: process.env.DB_NAME
+
+const app = express();
+app.use(cors());
+app.use(express.json());
+
+const db = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: {
+    rejectUnauthorized: false
+  }
 });
 
-
+// Verifica conexão
 db.connect(err => {
   if (err) {
-    console.error('Erro ao conectar ao banco:', err.message);
-    return;
+    console.error('Erro ao conectar ao PostgreSQL:', err.message);
+  } else {
+    console.log('Conectado ao PostgreSQL!');
   }
-  console.log('Conectado ao banco MySQL!');
 });
 
-const crypto = require('crypto');
-
 // POST - cadastrar novo usuário
-app.post('/usuarios', (req, res) => {
+app.post('/usuarios', async (req, res) => {
   const { nome, email, senha, tipo } = req.body;
 
   if (!nome || !email || !senha) {
     return res.status(400).json({ error: 'Campos obrigatórios: nome, email, senha' });
   }
 
-  const salt = crypto.randomBytes(10).toString('hex'); // 20 caracteres
-  const hash_senha = crypto
-    .pbkdf2Sync(senha, salt, 1000, 32, 'sha256')
-    .toString('hex');
+  const salt = crypto.randomBytes(10).toString('hex');
+  const hash_senha = crypto.pbkdf2Sync(senha, salt, 1000, 32, 'sha256').toString('hex');
 
-  const sql = 'INSERT INTO usuario (nome, email, hash_senha, salt, tipo) VALUES (?, ?, ?, ?, ?)';
-  db.query(sql, [nome, email, hash_senha, salt, tipo || 'c'], (err, result) => {
-    if (err) return res.status(500).json({ error: err.message });
-    res.status(201).json({ message: 'Usuário cadastrado!', id: result.insertId });
-  });
+  try {
+    const result = await db.query(
+      'INSERT INTO usuario (nome, email, hash_senha, salt, tipo) VALUES ($1, $2, $3, $4, $5) RETURNING id_usuario',
+      [nome, email, hash_senha, salt, tipo || 'c']
+    );
+    res.status(201).json({ message: 'Usuário cadastrado!', id: result.rows[0].id_usuario });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // POST - login de usuário
-const jwt = require('jsonwebtoken');
 const SECRET_KEY = process.env.JWT_SECRET;
- // Chave secreta para assinar o token JWT tem que alterar para algo mais seguro em produção!
 
-app.post('/login', (req, res) => {
+app.post('/login', async (req, res) => {
   const { email, senha } = req.body;
 
   if (!email || !senha) {
     return res.status(400).json({ error: 'Email e senha são obrigatórios' });
   }
 
-  const sql = 'SELECT * FROM usuario WHERE email = ?';
-  db.query(sql, [email], (err, results) => {
-    if (err) return res.status(500).json({ error: err.message });
-    if (results.length === 0) return res.status(401).json({ error: 'Usuário não encontrado' });
+  try {
+    const result = await db.query('SELECT * FROM usuario WHERE email = $1', [email]);
+    if (result.rows.length === 0) return res.status(401).json({ error: 'Usuário não encontrado' });
 
-    const usuario = results[0];
-    const hashVerificada = crypto
-      .pbkdf2Sync(senha, usuario.salt, 1000, 32, 'sha256')
-      .toString('hex');
+    const usuario = result.rows[0];
+    const hashVerificada = crypto.pbkdf2Sync(senha, usuario.salt, 1000, 32, 'sha256').toString('hex');
 
     if (hashVerificada !== usuario.hash_senha) {
       return res.status(401).json({ error: 'Senha incorreta' });
     }
 
-    // Gera token JWT
     const token = jwt.sign(
       { id_usuario: usuario.id_usuario, tipo: usuario.tipo },
       SECRET_KEY,
@@ -79,51 +75,63 @@ app.post('/login', (req, res) => {
     );
 
     res.json({ message: 'Login realizado com sucesso!', token });
-  });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-
-// GET - puxar todos os produtos
-app.get('/produtos', (req, res) => {
-  const sql = 'SELECT id_produto AS id, nome, descricao, qntd_estoq FROM produto';
-  db.query(sql, (err, results) => {
-    if (err) return res.status(500).json({ error: err });
-
+// GET - listar produtos
+app.get('/produtos', async (req, res) => {
+  try {
+    const result = await db.query('SELECT id_produto AS id, nome, descricao, qntd_estoq FROM produto');
     res.json({
-      results,
+      results: result.rows,
       page: {
-        count: results.length,
+        count: result.rows.length,
         next: false,
         previous: false
       }
     });
-  });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-
-// POST - cadastrar novo produto
-app.post('/produtos', (req, res) => {
+// POST - cadastrar produto
+app.post('/produtos', async (req, res) => {
   const { nome, descricao, qntd_estoq } = req.body;
-  const sql = 'INSERT INTO produto (nome, descricao, qntd_estoq) VALUES (?, ?, ?)';
-  db.query(sql, [nome, descricao, qntd_estoq], (err, result) => {
-    if (err) return res.status(500).json({ error: err });
-    res.status(201).json({ message: 'Produto cadastrado!', id: result.insertId });
-  });
+  try {
+    const result = await db.query(
+      'INSERT INTO produto (nome, descricao, qntd_estoq) VALUES ($1, $2, $3) RETURNING id_produto',
+      [nome, descricao, qntd_estoq]
+    );
+    res.status(201).json({ message: 'Produto cadastrado!', id: result.rows[0].id_produto });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-// PUT - atualizar dados de um produto
-app.put('/produtos/:id', (req, res) => {
+// PUT - atualizar produto
+app.put('/produtos/:id', async (req, res) => {
   const { id } = req.params;
   const { nome, descricao, qntd_estoq } = req.body;
-  const sql = 'UPDATE produto SET nome = ?, descricao = ?, qntd_estoq = ? WHERE id_produto = ?';
-  db.query(sql, [nome, descricao, qntd_estoq, id], (err, result) => {
-    if (err) return res.status(500).json({ error: err });
-    if (result.affectedRows === 0) return res.status(404).json({ message: 'Produto não encontrado' });
+  try {
+    const result = await db.query(
+      'UPDATE produto SET nome = $1, descricao = $2, qntd_estoq = $3 WHERE id_produto = $4',
+      [nome, descricao, qntd_estoq, id]
+    );
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ message: 'Produto não encontrado' });
+    }
+
     res.json({ message: 'Produto atualizado!' });
-  });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
-console.log("Rota POST /usuarios registrada!");
-const PORT = 3000;
+
+const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`API rodando na porta ${PORT}`);
 });
