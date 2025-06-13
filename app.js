@@ -88,7 +88,7 @@ app.post('/login', async (req, res) => {
 // GET - listar produtos
 app.get('/produtos', async (req, res) => {
   try {
-    const result = await db.query('SELECT id_produto AS id, nome, descricao, qntd_estoq FROM produto');
+    const result = await db.query('SELECT id_produto AS id, nome, descricao, qntd_estoq FROM produto ORDER BY id ASC');
     res.json({
       results: result.rows,
       page: {
