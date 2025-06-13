@@ -85,22 +85,56 @@ app.post('/login', async (req, res) => {
   }
 });
 
-// GET - listar produtos
 app.get('/produtos', async (req, res) => {
+  let { page = 1, limit = 10, orderBy = 'id_produto', order = 'asc' } = req.query;
+
+  page  = Number(page);
+  limit = Number(limit);
+  if (!Number.isInteger(page) || page < 1) page = 1;
+  if (!Number.isInteger(limit) || limit < 1) limit = 10;
+  const MAX_LIMIT = 100;
+  if (limit > MAX_LIMIT) limit = MAX_LIMIT;
+
+  const camposPermitidos   = ['id_produto', 'nome', 'descricao', 'qntd_estoq'];
+  const direcoesPermitidas = ['asc', 'desc'];
+
+  if (!camposPermitidos.includes(orderBy))
+    return res.status(400).json({ error: 'Parâmetro orderBy inválido.' });
+  if (!direcoesPermitidas.includes(order.toLowerCase()))
+    return res.status(400).json({ error: 'Parâmetro order inválido.' });
+
+  const offset = (page - 1) * limit;
+
   try {
-    const result = await db.query('SELECT id_produto AS id, nome, descricao, qntd_estoq FROM produto ORDER BY id ASC');
+    const { rows: [{ count }] } = await db.query('SELECT COUNT(*) AS count FROM produto');
+    const total = Number(count);
+
+    const format = require('pg-format');
+    const produtosQuery = format(`
+      SELECT id_produto AS id, nome, descricao, qntd_estoq
+      FROM produto
+      ORDER BY %I %s
+      LIMIT $1 OFFSET $2
+    `, orderBy, order.toUpperCase());
+
+    const { rows: produtos } = await db.query(produtosQuery, [limit, offset]);
+
     res.json({
-      results: result.rows,
+      results: produtos,
       page: {
-        count: result.rows.length,
-        next: false,
-        previous: false
+        current: page,
+        count: produtos.length,
+        total,
+        next: offset + limit < total ? page + 1 : false,
+        previous: page > 1 ? page - 1 : false
       }
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: 'Erro interno do servidor.' });
   }
 });
+
 
 // POST - cadastrar produto
 app.post('/produtos', async (req, res) => {
