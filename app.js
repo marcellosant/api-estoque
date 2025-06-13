@@ -32,6 +32,11 @@ app.post('/usuarios', async (req, res) => {
   if (!nome || !email || !senha) {
     return res.status(400).json({ error: 'Campos obrigatórios: nome, email, senha' });
   }
+  const emailMinusculo = email.toLowerCase(); 
+
+  if (!emailMinusculo.includes('@uepa.br')) {
+    return res.status(400).json({ error: 'Email deve ser constitucional UEPA' });
+  }
 
   const salt = crypto.randomBytes(10).toString('hex');
   const hash_senha = crypto.pbkdf2Sync(senha, salt, 1000, 32, 'sha256').toString('hex');
@@ -39,7 +44,7 @@ app.post('/usuarios', async (req, res) => {
   try {
     const result = await db.query(
       'INSERT INTO usuario (nome, email, hash_senha, salt, tipo) VALUES ($1, $2, $3, $4, $5) RETURNING id_usuario',
-      [nome, email, hash_senha, salt, tipo || 'c']
+      [nome, emailMinusculo, hash_senha, salt, tipo || 'c']
     );
     res.status(201).json({ message: 'Usuário cadastrado!', id: result.rows[0].id_usuario });
   } catch (err) {
@@ -130,6 +135,23 @@ app.put('/produtos/:id', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+// DELETE - excluir produto
+app.delete('/produtos/:id', async (req, res) => {
+  const { id } = req.params;
+  try {
+    const result = await db.query('DELETE FROM produto WHERE id_produto = $1', [id]);
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ message: 'Produto não encontrado' });
+    }
+
+    res.json({ message: 'Produto excluído!' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
