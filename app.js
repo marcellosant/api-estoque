@@ -85,56 +85,51 @@ app.post('/login', async (req, res) => {
   }
 });
 
+// get- produtos 
+// GET - listar produtos com paginação
 app.get('/produtos', async (req, res) => {
-  let { page = 1, limit = 10, orderBy = 'id_produto', order = 'asc' } = req.query;
-
-  page  = Number(page);
-  limit = Number(limit);
-  if (!Number.isInteger(page) || page < 1) page = 1;
-  if (!Number.isInteger(limit) || limit < 1) limit = 10;
-  const MAX_LIMIT = 100;
-  if (limit > MAX_LIMIT) limit = MAX_LIMIT;
-
-  const camposPermitidos   = ['id_produto', 'nome', 'descricao', 'qntd_estoq'];
-  const direcoesPermitidas = ['asc', 'desc'];
-
-  if (!camposPermitidos.includes(orderBy))
-    return res.status(400).json({ error: 'Parâmetro orderBy inválido.' });
-  if (!direcoesPermitidas.includes(order.toLowerCase()))
-    return res.status(400).json({ error: 'Parâmetro order inválido.' });
+  // page começa em 1 por convenção; limit padrão 10
+  const page  = Math.max(parseInt(req.query.page)  || 1, 1);
+  const limit = Math.max(parseInt(req.query.limit) || 10, 1);
 
   const offset = (page - 1) * limit;
 
   try {
-    const { rows: [{ count }] } = await db.query('SELECT COUNT(*) AS count FROM produto');
-    const total = Number(count);
+    // 1) total de registros (precisa só de um número)
+    const totalResult = await db.query('SELECT COUNT(*) FROM produto');
+    const totalItems  = parseInt(totalResult.rows[0].count);
 
-    const format = require('pg-format');
-    const produtosQuery = format(`
-      SELECT id_produto AS id, nome, descricao, qntd_estoq
-      FROM produto
-      ORDER BY %I %s
-      LIMIT $1 OFFSET $2
-    `, orderBy, order.toUpperCase());
+    // 2) dados da página
+    const dataResult = await db.query(
+      `SELECT id_produto AS id, nome, descricao, qntd_estoq
+       FROM produto
+       ORDER BY id_produto ASC
+       LIMIT $1 OFFSET $2`,
+      [limit, offset]
+    );
 
-    const { rows: produtos } = await db.query(produtosQuery, [limit, offset]);
+    // cálculo de páginas
+    const totalPages = Math.ceil(totalItems / limit);
+
+    // links (ou booleanos) de navegação
+    const hasNextPage     = page < totalPages;
+    const hasPreviousPage = page > 1;
 
     res.json({
-      results: produtos,
+      results: dataResult.rows,
       page: {
         current: page,
-        count: produtos.length,
-        total,
-        next: offset + limit < total ? page + 1 : false,
-        previous: page > 1 ? page - 1 : false
+        limit,
+        total_items : totalItems,
+        total_pages : totalPages,
+        next     : hasNextPage     ? `/produtos?page=${page + 1}&limit=${limit}` : null,
+        previous : hasPreviousPage ? `/produtos?page=${page - 1}&limit=${limit}` : null
       }
     });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Erro interno do servidor.' });
+    res.status(500).json({ error: err.message });
   }
 });
-
 
 // POST - cadastrar produto
 app.post('/produtos', async (req, res) => {
