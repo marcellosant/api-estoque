@@ -168,6 +168,36 @@ app.get('/usuarios', autenticarToken, autorizarAdmin, async (req, res) => {
   }
 });
 
+// PUT - atualizar usuário (admin)
+app.put('/usuarios/:id', autenticarToken, autorizarAdmin, async (req, res) => {
+  const { id } = req.params;
+  const { nome, email, tipo } = req.body;
+
+  if (!nome || !email || !tipo) {
+    return res.status(400).json({ error: 'Campos nome, email e tipo são obrigatórios' });
+  }
+
+  if (!email.toLowerCase().includes('@uepa.br')) {
+    return res.status(400).json({ error: 'Email deve ser institucional UEPA' });
+  }
+
+  try {
+    const result = await db.query(
+      `UPDATE usuario 
+       SET nome = $1, email = $2, tipo = $3 
+       WHERE id_usuario = $4`,
+      [nome, email.toLowerCase(), tipo, id]
+    );
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: 'Usuário não encontrado' });
+    }
+
+    res.json({ message: 'Usuário atualizado com sucesso!' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 
 // GET - listar produtos com paginação
