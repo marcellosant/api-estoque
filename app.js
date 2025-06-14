@@ -16,6 +16,31 @@ const db = new Pool({
   }
 });
 
+function autenticarToken(req, res, next) {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1]; // formato: "Bearer <token>"
+
+  if (!token) {
+    return res.status(401).json({ error: 'Token não fornecido' });
+  }
+
+  jwt.verify(token, process.env.JWT_SECRET, (err, usuario) => {
+    if (err) {
+      return res.status(403).json({ error: 'Token inválido ou expirado' });
+    }
+
+    req.usuario = usuario; // o payload do token (ex: id_usuario, tipo)
+    next();
+  });
+}
+
+function autorizarAdmin(req, res, next) {
+  if (req.usuario.tipo !== 'admin') {
+    return res.status(403).json({ error: 'Acesso permitido apenas a administradores' });
+  }
+  next();
+}
+
 // Verifica conexão
 db.connect(err => {
   if (err) {
@@ -43,9 +68,12 @@ app.post('/usuarios', async (req, res) => {
 
   try {
     const result = await db.query(
-      'INSERT INTO usuario (nome, email, hash_senha, salt, tipo) VALUES ($1, $2, $3, $4, $5) RETURNING id_usuario',
-      [nome, emailMinusculo, hash_senha, salt, tipo || 'c']
+  'INSERT INTO usuario (nome, email, hash_senha, salt, tipo) VALUES ($1, $2, $3, $4, $5) RETURNING id_usuario',
+  [nome, emailMinusculo, hash_senha, salt, 'usuario']
     );
+    if (result.rows.length === 0) {
+      return res.status(500).json({ error: 'Erro ao cadastrar usuário' });
+    }
     res.status(201).json({ message: 'Usuário cadastrado!', id: result.rows[0].id_usuario });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -53,10 +81,8 @@ app.post('/usuarios', async (req, res) => {
 });
 
 // POST - login de usuário
-const SECRET_KEY = process.env.JWT_SECRET;
-
 app.post('/login', async (req, res) => {
-  const { email, senha } = req.body;
+  const { email, senha, token_admin } = req.body;
 
   if (!email || !senha) {
     return res.status(400).json({ error: 'Email e senha são obrigatórios' });
@@ -73,20 +99,37 @@ app.post('/login', async (req, res) => {
       return res.status(401).json({ error: 'Senha incorreta' });
     }
 
+    // validação de token_admin se for tipo admin
+    if (usuario.tipo === 'admin') {
+      const TOKEN_ESPECIAL = process.env.ADMIN_TOKEN;
+      if (!token_admin || token_admin !== TOKEN_ESPECIAL) {
+        return res.status(403).json({ error: 'Token de administrador inválido ou ausente' });
+      }
+    }
+
     const token = jwt.sign(
       { id_usuario: usuario.id_usuario, tipo: usuario.tipo },
-      SECRET_KEY,
+      process.env.JWT_SECRET,
       { expiresIn: '1h' }
     );
 
-    res.json({ message: 'Login realizado com sucesso!', token });
+    res.json({
+      message: 'Login realizado com sucesso!',
+      token,
+      usuario: {
+      id: usuario.id_usuario,
+      tipo: usuario.tipo,
+      nome: usuario.nome
+    }});
+
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
+
 // GET - listar usuários com paginação
-app.get('/usuarios', async (req, res) => {
+app.get('/usuarios', autenticarToken, autorizarAdmin, async (req, res) => {
   const page  = Math.max(parseInt(req.query.page)  || 1, 1);
   const limit = Math.max(parseInt(req.query.limit) || 10, 1);
   const offset = (page - 1) * limit;
