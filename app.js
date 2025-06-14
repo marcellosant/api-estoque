@@ -193,15 +193,38 @@ app.post('/produtos', async (req, res) => {
 // PUT - atualizar produto
 app.put('/produtos/:id', async (req, res) => {
   const { id } = req.params;
-  const { nome, descricao, qntd_estoq } = req.body;
+  const { nome, descricao, qntd_estoq, id_usuario } = req.body;
+
+  if (!id_usuario) {
+    return res.status(400).json({ error: 'ID do usuário é obrigatório para log' });
+  }
+
   try {
+    // 1. Recuperar produto atual para comparar estoque
+    const current = await db.query('SELECT qntd_estoq FROM produto WHERE id_produto = $1', [id]);
+
+    if (current.rows.length === 0) {
+      return res.status(404).json({ message: 'Produto não encontrado' });
+    }
+
+    const estoqueAnterior = current.rows[0].qntd_estoq;
+
+    // 2. Atualizar produto
     const result = await db.query(
       'UPDATE produto SET nome = $1, descricao = $2, qntd_estoq = $3 WHERE id_produto = $4',
       [nome, descricao, qntd_estoq, id]
     );
 
-    if (result.rowCount === 0) {
-      return res.status(404).json({ message: 'Produto não encontrado' });
+    // 3. Se houve mudança de estoque, registra log
+    const diferenca = qntd_estoq - estoqueAnterior;
+
+    if (diferenca !== 0) {
+      const tipo = diferenca > 0 ? 'e' : 's';
+
+      await db.query(
+        'INSERT INTO movimentacao (id_usuario, id_produto, tipo, qntd) VALUES ($1, $2, $3, $4)',
+        [id_usuario, id, tipo, Math.abs(diferenca)]
+      );
     }
 
     res.json({ message: 'Produto atualizado!' });
