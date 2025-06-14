@@ -85,6 +85,48 @@ app.post('/login', async (req, res) => {
   }
 });
 
+// GET - listar usuários com paginação
+app.get('/usuarios', async (req, res) => {
+  const page  = Math.max(parseInt(req.query.page)  || 1, 1);
+  const limit = Math.max(parseInt(req.query.limit) || 10, 1);
+  const offset = (page - 1) * limit;
+
+  try {
+    // 1. Total de usuários
+    const totalResult = await db.query('SELECT COUNT(*) FROM usuario');
+    const totalItems = parseInt(totalResult.rows[0].count);
+
+    // 2. Dados paginados
+    const dataResult = await db.query(
+      `SELECT id_usuario AS id, nome, email, tipo
+       FROM usuario
+       ORDER BY id_usuario ASC
+       LIMIT $1 OFFSET $2`,
+      [limit, offset]
+    );
+
+    const totalPages = Math.ceil(totalItems / limit);
+    const hasNextPage = page < totalPages;
+    const hasPreviousPage = page > 1;
+
+    res.json({
+      results: dataResult.rows,
+      page: {
+        current: page,
+        limit,
+        total_items: totalItems,
+        total_pages: totalPages,
+        next: hasNextPage ? `/usuarios?page=${page + 1}&limit=${limit}` : null,
+        previous: hasPreviousPage ? `/usuarios?page=${page - 1}&limit=${limit}` : null
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
+
 // GET - listar produtos com paginação
 app.get('/produtos', async (req, res) => {
   // page começa em 1 por convenção; limit padrão 10
@@ -208,6 +250,11 @@ app.put('/produtos/:id', async (req, res) => {
     }
 
     const estoqueAnterior = current.rows[0].qntd_estoq;
+
+    // Validação de campos obrigatórios
+    if (qntd_estoq < 0) {
+      return res.status(400).json({ error: 'Estoque não pode ser negativo' });
+      }
 
     // 2. Atualizar produto
     const result = await db.query(
