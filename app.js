@@ -85,7 +85,6 @@ app.post('/login', async (req, res) => {
   }
 });
 
-// get- produtos 
 // GET - listar produtos com paginação
 app.get('/produtos', async (req, res) => {
   // page começa em 1 por convenção; limit padrão 10
@@ -130,6 +129,52 @@ app.get('/produtos', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+const ExcelJS = require('exceljs');
+
+// GET - exportar todos os produtos para Excel
+app.get('/produtos/excel', async (req, res) => {
+  try {
+    // 1) Busca todos os produtos
+    const { rows: produtos } = await db.query(
+      `SELECT id_produto AS id, nome, descricao, qntd_estoq
+       FROM produto
+       ORDER BY id_produto`
+    );
+
+    // 2) Cria workbook e aba
+    const wb  = new ExcelJS.Workbook();
+    const ws  = wb.addWorksheet('Produtos');
+
+    // 3) Define as colunas (título, chave, largura)
+    ws.columns = [
+      { header: 'ID',           key: 'id',          width: 10 },
+      { header: 'Nome',         key: 'nome',        width: 30 },
+      { header: 'Descrição',    key: 'descricao',   width: 50 },
+      { header: 'Qtd. Estoque', key: 'qntd_estoq',  width: 15 }
+    ];
+
+    // 4) Insere cada produto como linha
+    produtos.forEach(prod => ws.addRow(prod));
+
+    // 5) Cabeçalhos HTTP para download
+    res.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    );
+    res.setHeader(
+      'Content-Disposition',
+      'attachment; filename="produtos.xlsx"'
+    );
+
+    // 6) Grava direto no fluxo de resposta
+    await wb.xlsx.write(res);
+    res.end();                 // encerra a stream
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 
 // POST - cadastrar produto
 app.post('/produtos', async (req, res) => {
