@@ -1,23 +1,27 @@
 // src/app.js
 import express from 'express';
 import cors from 'cors';
-import { Pool } from 'pg';
-import dotenv from 'dotenv';
 import { authHandler, readSession } from './auth.js';
-import { randomUUID } from 'crypto';
+import dotenv from 'dotenv';
+import { Pool } from 'pg';
 import ExcelJS from 'exceljs';
+import { randomUUID } from 'crypto';
 
 dotenv.config();
 
 const app = express();
 
-// 🔐 Monte o Better Auth antes de tudo
-app.all('/api/auth/*', authHandler);
-
+// 1️⃣ CORS global — precisa estar aqui antes de qualquer rota
 app.use(cors({
-  origin: 'http://localhost:3000',  // domínio do seu front-end
-  credentials: true                 // adiciona Access-Control-Allow-Credentials: true
+  origin: 'http://localhost:3000',  // ou o domínio/porta exatos do seu front
+  credentials: true                 // habilita Access-Control-Allow-Credentials
 }));
+
+// 2️⃣ Body-parser só depois do CORS
+app.use(express.json());
+
+// 3️⃣ Agora o Better Auth
+app.all('/api/auth/*', authHandler);
 app.use(express.json());
 
 // conexão com o banco
