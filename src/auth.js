@@ -11,7 +11,7 @@ const db = new Pool({
   ssl: { rejectUnauthorized: false },
 });
 
-export const auth = betterAuth({
+const auth = betterAuth({
   database: db,
   emailAndPassword: {
     enabled: true,
@@ -19,8 +19,13 @@ export const auth = betterAuth({
   }
 });
 
-// helper para seu middleware de rota protegida
-export const readSession = auth.readSession;
-
-// o “router” do Better Auth para Express
+// middleware Express gerado pelo Better Auth
 export const authHandler = toNodeHandler(auth);
+
+// aqui, “forçamos” todo e-mail como verificado
+export async function readSession(req) {
+  const session = await auth.readSession(req);
+  if (!session) return null;
+  session.user.emailStatus = 'verified';
+  return session;
+}
