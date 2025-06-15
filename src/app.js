@@ -1,39 +1,42 @@
 // src/app.js
 import express from 'express';
 import cors from 'cors';
+import cookieParser from 'cookie-parser';
 import { authHandler, readSession } from './auth.js';
 import dotenv from 'dotenv';
 import { Pool } from 'pg';
 import ExcelJS from 'exceljs';
-import { randomUUID } from 'crypto';
 
 dotenv.config();
 
 const app = express();
 
-// 1️⃣ CORS global + preflight — antes de qualquer rota
+// 1️⃣ CORS global + preflight — antes de qualquer coisa
 app.use(cors({
-  origin: 'http://localhost:3000',  // domínio/porta do seu front
-  credentials: true                 // habilita Access-Control-Allow-Credentials
+  origin: 'http://localhost:3000',
+  credentials: true
 }));
 app.options('*', cors({
   origin: 'http://localhost:3000',
   credentials: true
 }));
 
-// 2️⃣ Parser de JSON — antes de authHandler e demais rotas que usam body
-app.use(express.json());
+// 2️⃣ Cookie parser — se você usa cookies de sessão HttpOnly
+app.use(cookieParser());
 
-// 3️⃣ Rotas de autenticação (Better Auth)
+// 3️⃣ Rotas de autenticação (Better Auth) — deve vir ANTES do express.json()
 app.all('/api/auth/*', authHandler);
 
-// 4️⃣ Conexão com o banco (Postgres via Neon)
+// 4️⃣ Parser de JSON — somente para as rotas *depois* do authHandler
+app.use(express.json());
+
+// 5️⃣ Conexão com o banco (Postgres via Neon)
 const db = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false },
 });
 
-// 5️⃣ Middleware de sessão — usa o readSession para proteger rotas
+// 6️⃣ Middleware de sessão — protege as rotas que precisam de login
 async function autenticarUsuario(req, res, next) {
   const session = await readSession(req);
   if (!session) return res.status(401).json({ error: 'Não autenticado' });
@@ -87,11 +90,11 @@ app.put('/produtos/:id', autenticarUsuario, async (req, res) => {
 });
 
 app.get('/produtos', async (req, res) => {
-  const page = Math.max(parseInt(req.query.page) || 1, 1);
-  const limit = Math.max(parseInt(req.query.limit) || 10, 1);
+  const page   = Math.max(parseInt(req.query.page) || 1, 1);
+  const limit  = Math.max(parseInt(req.query.limit) || 10, 1);
   const offset = (page - 1) * limit;
   try {
-    const totalRes = await db.query('SELECT COUNT(*) FROM produto');
+    const totalRes    = await db.query('SELECT COUNT(*) FROM produto');
     const produtosRes = await db.query(
       'SELECT id_produto AS id, nome, descricao, qntd_estoq FROM produto ORDER BY id_produto LIMIT $1 OFFSET $2',
       [limit, offset]
@@ -100,9 +103,9 @@ app.get('/produtos', async (req, res) => {
     res.json({
       results: produtosRes.rows,
       page: {
-        current: page,
-        total_items: totalItems,
-        total_pages: Math.ceil(totalItems / limit),
+        current:      page,
+        total_items:  totalItems,
+        total_pages:  Math.ceil(totalItems / limit),
       },
     });
   } catch (err) {
