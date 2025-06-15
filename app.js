@@ -3,7 +3,7 @@ import express from 'express';
 import cors from 'cors';
 import { Pool } from 'pg';
 import dotenv from 'dotenv';
-import { auth } from './auth';
+import { auth } from './auth.js';
 import { randomUUID } from 'crypto';
 import ExcelJS from 'exceljs';
 
