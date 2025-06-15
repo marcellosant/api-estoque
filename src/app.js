@@ -1,41 +1,50 @@
-// src/app.js
 import express from 'express';
 import cors from 'cors';
 import { authHandler, readSession } from './auth.js';
 import dotenv from 'dotenv';
 import { Pool } from 'pg';
 import ExcelJS from 'exceljs';
-import { randomUUID } from 'crypto';
 
 dotenv.config();
 
 const app = express();
 
-// 1️⃣ CORS global + preflight — antes de qualquer rota
+// 👇 Defina em .env: FRONT_URL=https://meu-front.onrender.com
+const allowedOrigins = [
+  process.env.FRONT_URL,
+  'http://localhost:3000'
+];
+
 app.use(cors({
-  origin: 'http://localhost:3000',  // domínio/porta do seu front
-  credentials: true                 // habilita Access-Control-Allow-Credentials
+  origin: (origin, callback) => {
+    // em dev o origin pode vir vazio (direct curl), então permitimos também
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Não autorizado pela CORS'));
+    }
+  },
+  credentials: true
 }));
+// preflight para todas as rotas
 app.options('*', cors({
-  origin: 'http://localhost:3000',
+  origin: allowedOrigins,
   credentials: true
 }));
 
-// 2️⃣ Parser de JSON — antes do authHandler e de qualquer rota que leia body
-app.use(express.json());
-
-// 3️⃣ Cookie parser — para que o Better Auth possa ler cookies de sessão
-
-// 4️⃣ Rotas de autenticação (Better Auth)
+// 1️⃣ Autenticação Better Auth ANTES de parsear JSON
 app.all('/api/auth/*', authHandler);
 
-// 5️⃣ Conexão com o banco (Postgres via Neon)
+// 2️⃣ Parser de JSON para as rotas abaixo (produtos, etc)
+app.use(express.json());
+
+// 3️⃣ Conexão com o banco (Postgres via Neon)
 const db = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false },
 });
 
-// 6️⃣ Middleware de sessão — usa o readSession para proteger rotas
+// 4️⃣ Middleware de sessão — protege rotas que precisam de login
 async function autenticarUsuario(req, res, next) {
   const session = await readSession(req);
   if (!session) return res.status(401).json({ error: 'Não autenticado' });
@@ -136,13 +145,11 @@ app.get('/produtos/excel', async (req, res) => {
   }
 });
 
-// Rota do usuário logado
+// rota do usuário logado
 app.get('/me', autenticarUsuario, (req, res) => {
   res.json({ usuario: req.user });
 });
 
-// =======================
-// INICIA SERVIDOR
-// =======================
+// inicia servidor
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`API rodando na porta ${PORT}`));

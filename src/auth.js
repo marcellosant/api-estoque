@@ -1,4 +1,3 @@
-// src/auth.js
 import { betterAuth } from 'better-auth';
 import { toNodeHandler } from 'better-auth/node';
 import { Pool } from 'pg';
@@ -16,27 +15,26 @@ export const auth = betterAuth({
   emailAndPassword: {
     enabled: true,
     requireEmailVerification: false,
-    // autoSignIn: false,       // caso queira desativar o login automático após sign-up
+    // autoSignIn: false,   // opcional
   },
-  // Permite que seu front em localhost:3000 receba o cookie
-  trustedOrigins: ['http://localhost:3000'],
+  // usamos a mesma FRONT_URL do app.js
+  trustedOrigins: [
+    process.env.FRONT_URL, 
+    'http://localhost:3000'
+  ],
   advanced: {
-    // Configura o cookie para contexto cross-site
     defaultCookieAttributes: {
       path:     '/',
       httpOnly: true,
-      sameSite: 'none',    // ⬅️ necessário para cookies cross-site
-      secure:   true       // ⬅️ necessário quando sameSite=None
+      sameSite: 'none',  // necessário para cross-site
+      secure:   true     // obrigatório com SameSite=None
     }
   },
-  // Garante secure mesmo em ambiente de desenvolvimento
-  useSecureCookies: true
+  useSecureCookies: true   // força Secure mesmo em dev
 });
 
-// middleware Express gerado pelo Better Auth
+// exporta o handler e o leitor de sessão pro Express
 export const authHandler = toNodeHandler(auth);
-
-// “Forçamos” todo e-mail como verificado
 export async function readSession(req) {
   const session = await auth.readSession(req);
   if (!session) return null;
