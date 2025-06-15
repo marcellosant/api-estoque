@@ -17,8 +17,6 @@ app.use(cors({
   credentials: true                 // habilita Access-Control-Allow-Credentials
 }));
 
-// 2️⃣ Body-parser só depois do CORS
-app.use(express.json());
 
 // 3️⃣ Agora o Better Auth
 app.all('/api/auth/*', authHandler);
