@@ -14,7 +14,10 @@ const app = express();
 // 🔐 Monte o Better Auth antes de tudo
 app.all('/api/auth/*', authHandler);
 
-app.use(cors());
+app.use(cors({
+  origin: 'http://localhost:3000',  // domínio do seu front-end
+  credentials: true                 // adiciona Access-Control-Allow-Credentials: true
+}));
 app.use(express.json());
 
 // conexão com o banco
