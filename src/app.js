@@ -139,6 +139,10 @@ app.get('/me', autenticarUsuario, (req, res) => {
 // ==================================
 // 🟢 INICIAR SERVIDOR
 // ==================================
+// Rotas de autenticação do better-auth
+app.use('/api/auth', auth.router);
+
+// 🟢 Iniciar servidor
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`API rodando na porta ${PORT}`);
