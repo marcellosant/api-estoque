@@ -1,9 +1,8 @@
-// server.ts
 import express from 'express';
 import cors from 'cors';
 import { Pool } from 'pg';
 import dotenv from 'dotenv';
-import { auth } from './auth.js';
+import authRouter, { readSession } from './auth.js'; 
 import { randomUUID } from 'crypto';
 import ExcelJS from 'exceljs';
 
@@ -18,9 +17,9 @@ const db = new Pool({
   ssl: { rejectUnauthorized: false },
 });
 
-// Middleware: verificar se o usuário está autenticado
+// ✅ Middleware de autenticação usando readSession
 async function autenticarUsuario(req, res, next) {
-  const session = await auth.readSession(req);
+  const session = await readSession(req);
   if (!session) return res.status(401).json({ error: 'Não autenticado' });
   req.user = session.user;
   next();
@@ -140,9 +139,9 @@ app.get('/me', autenticarUsuario, (req, res) => {
 // 🟢 INICIAR SERVIDOR
 // ==================================
 // Rotas de autenticação do better-auth
-app.use('/api/auth', auth.router);
+app.use('/api/auth', authRouter);
 
-// 🟢 Iniciar servidor
+// ✅ Iniciar servidor
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`API rodando na porta ${PORT}`);
