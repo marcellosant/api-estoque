@@ -1,9 +1,13 @@
-const express = require('express');
-const cors = require('cors');
-const { Pool } = require('pg');
-const jwt = require('jsonwebtoken');
-const crypto = require('crypto');
-require('dotenv').config();
+// server.ts
+import express from 'express';
+import cors from 'cors';
+import { Pool } from 'pg';
+import dotenv from 'dotenv';
+import { auth } from './auth';
+import { randomUUID } from 'crypto';
+import ExcelJS from 'exceljs';
+
+dotenv.config();
 
 const app = express();
 app.use(cors());
@@ -11,289 +15,25 @@ app.use(express.json());
 
 const db = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: {
-    rejectUnauthorized: false
-  }
+  ssl: { rejectUnauthorized: false },
 });
 
-function autenticarToken(req, res, next) {
-  const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1]; // formato: "Bearer <token>"
-
-  if (!token) {
-    return res.status(401).json({ error: 'Token não fornecido' });
-  }
-
-  jwt.verify(token, process.env.JWT_SECRET, (err, usuario) => {
-    if (err) {
-      return res.status(403).json({ error: 'Token inválido ou expirado' });
-    }
-
-    req.usuario = usuario; // o payload do token (ex: id_usuario, tipo)
-    next();
-  });
-}
-
-function autorizarAdmin(req, res, next) {
-  if (req.usuario.tipo !== 'admin') {
-    return res.status(403).json({ error: 'Acesso permitido apenas a administradores' });
-  }
+// Middleware: verificar se o usuário está autenticado
+async function autenticarUsuario(req, res, next) {
+  const session = await auth.readSession(req);
+  if (!session) return res.status(401).json({ error: 'Não autenticado' });
+  req.user = session.user;
   next();
 }
 
-// Verifica conexão
-db.connect(err => {
-  if (err) {
-    console.error('Erro ao conectar ao PostgreSQL:', err.message);
-  } else {
-    console.log('Conectado ao PostgreSQL!');
-  }
-});
-
-// POST - cadastrar novo usuário
-app.post('/usuarios', async (req, res) => {
-  const { nome, email, senha, tipo } = req.body;
-
-  if (!nome || !email || !senha) {
-    return res.status(400).json({ error: 'Campos obrigatórios: nome, email, senha' });
-  }
-  const emailMinusculo = email.toLowerCase(); 
-
-  if (!emailMinusculo.includes('@uepa.br')) {
-    return res.status(400).json({ error: 'Email deve ser constitucional UEPA' });
-  }
-
-  const salt = crypto.randomBytes(10).toString('hex');
-  const hash_senha = crypto.pbkdf2Sync(senha, salt, 1000, 32, 'sha256').toString('hex');
-
-  try {
-    const result = await db.query(
-  'INSERT INTO usuario (nome, email, hash_senha, salt, tipo) VALUES ($1, $2, $3, $4, $5) RETURNING id_usuario',
-  [nome, emailMinusculo, hash_senha, salt, 'usuario']
-    );
-    if (result.rows.length === 0) {
-      return res.status(500).json({ error: 'Erro ao cadastrar usuário' });
-    }
-    res.status(201).json({ message: 'Usuário cadastrado!', id: result.rows[0].id_usuario });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// POST - login de usuário
-app.post('/login', async (req, res) => {
-  const { email, senha, token_admin } = req.body;
-
-  if (!email || !senha) {
-    return res.status(400).json({ error: 'Email e senha são obrigatórios' });
-  }
-
-  try {
-    const result = await db.query('SELECT * FROM usuario WHERE email = $1', [email]);
-    if (result.rows.length === 0) return res.status(401).json({ error: 'Usuário não encontrado' });
-
-    const usuario = result.rows[0];
-    const hashVerificada = crypto.pbkdf2Sync(senha, usuario.salt, 1000, 32, 'sha256').toString('hex');
-
-    if (hashVerificada !== usuario.hash_senha) {
-      return res.status(401).json({ error: 'Senha incorreta' });
-    }
-
-    // validação de token_admin se for tipo admin
-    if (usuario.tipo === 'admin') {
-      const TOKEN_ESPECIAL = process.env.ADMIN_TOKEN;
-      if (!token_admin || token_admin !== TOKEN_ESPECIAL) {
-        return res.status(403).json({ error: 'Token de administrador inválido ou ausente' });
-      }
-    }
-
-    const token = jwt.sign(
-      { id_usuario: usuario.id_usuario, tipo: usuario.tipo },
-      process.env.JWT_SECRET,
-      { expiresIn: '1h' }
-    );
-
-    res.json({
-      message: 'Login realizado com sucesso!',
-      token,
-      usuario: {
-      id: usuario.id_usuario,
-      tipo: usuario.tipo,
-      nome: usuario.nome
-    }});
-
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-
-// GET - listar usuários com paginação
-app.get('/usuarios', autenticarToken, autorizarAdmin, async (req, res) => {
-  const page  = Math.max(parseInt(req.query.page)  || 1, 1);
-  const limit = Math.max(parseInt(req.query.limit) || 10, 1);
-  const offset = (page - 1) * limit;
-
-  try {
-    // 1. Total de usuários
-    const totalResult = await db.query('SELECT COUNT(*) FROM usuario');
-    const totalItems = parseInt(totalResult.rows[0].count);
-
-    // 2. Dados paginados
-    const dataResult = await db.query(
-      `SELECT id_usuario AS id, nome, email, tipo
-       FROM usuario
-       ORDER BY id_usuario ASC
-       LIMIT $1 OFFSET $2`,
-      [limit, offset]
-    );
-
-    const totalPages = Math.ceil(totalItems / limit);
-    const hasNextPage = page < totalPages;
-    const hasPreviousPage = page > 1;
-
-    res.json({
-      results: dataResult.rows,
-      page: {
-        current: page,
-        limit,
-        total_items: totalItems,
-        total_pages: totalPages,
-        next: hasNextPage ? `/usuarios?page=${page + 1}&limit=${limit}` : null,
-        previous: hasPreviousPage ? `/usuarios?page=${page - 1}&limit=${limit}` : null
-      }
-    });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// PUT - atualizar usuário (admin)
-app.put('/usuarios/:id', autenticarToken, autorizarAdmin, async (req, res) => {
-  const { id } = req.params;
-  const { nome, email, tipo } = req.body;
-
-  if (!nome || !email || !tipo) {
-    return res.status(400).json({ error: 'Campos nome, email e tipo são obrigatórios' });
-  }
-
-  if (!email.toLowerCase().includes('@uepa.br')) {
-    return res.status(400).json({ error: 'Email deve ser institucional UEPA' });
-  }
-
-  try {
-    const result = await db.query(
-      `UPDATE usuario 
-       SET nome = $1, email = $2, tipo = $3 
-       WHERE id_usuario = $4`,
-      [nome, email.toLowerCase(), tipo, id]
-    );
-
-    if (result.rowCount === 0) {
-      return res.status(404).json({ error: 'Usuário não encontrado' });
-    }
-
-    res.json({ message: 'Usuário atualizado com sucesso!' });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-
-// GET - listar produtos com paginação
-app.get('/produtos', async (req, res) => {
-  // page começa em 1 por convenção; limit padrão 10
-  const page  = Math.max(parseInt(req.query.page)  || 1, 1);
-  const limit = Math.max(parseInt(req.query.limit) || 10, 1);
-
-  const offset = (page - 1) * limit;
-
-  try {
-    // 1) total de registros (precisa só de um número)
-    const totalResult = await db.query('SELECT COUNT(*) FROM produto');
-    const totalItems  = parseInt(totalResult.rows[0].count);
-
-    // 2) dados da página
-    const dataResult = await db.query(
-      `SELECT id_produto AS id, nome, descricao, qntd_estoq
-       FROM produto
-       ORDER BY id_produto ASC
-       LIMIT $1 OFFSET $2`,
-      [limit, offset]
-    );
-
-    // cálculo de páginas
-    const totalPages = Math.ceil(totalItems / limit);
-
-    // links (ou booleanos) de navegação
-    const hasNextPage     = page < totalPages;
-    const hasPreviousPage = page > 1;
-
-    res.json({
-      results: dataResult.rows,
-      page: {
-        current: page,
-        limit,
-        total_items : totalItems,
-        total_pages : totalPages,
-        next     : hasNextPage     ? `/produtos?page=${page + 1}&limit=${limit}` : null,
-        previous : hasPreviousPage ? `/produtos?page=${page - 1}&limit=${limit}` : null
-      }
-    });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-const ExcelJS = require('exceljs');
-
-// GET - exportar todos os produtos para Excel
-app.get('/produtos/excel', async (req, res) => {
-  try {
-    // 1) Busca todos os produtos
-    const { rows: produtos } = await db.query(
-      `SELECT id_produto AS id, nome, descricao, qntd_estoq
-       FROM produto
-       ORDER BY id_produto`
-    );
-
-    // 2) Cria workbook e aba
-    const wb  = new ExcelJS.Workbook();
-    const ws  = wb.addWorksheet('Produtos');
-
-    // 3) Define as colunas (título, chave, largura)
-    ws.columns = [
-      { header: 'ID',           key: 'id',          width: 10 },
-      { header: 'Nome',         key: 'nome',        width: 30 },
-      { header: 'Descrição',    key: 'descricao',   width: 50 },
-      { header: 'Qtd. Estoque', key: 'qntd_estoq',  width: 15 }
-    ];
-
-    // 4) Insere cada produto como linha
-    produtos.forEach(prod => ws.addRow(prod));
-
-    // 5) Cabeçalhos HTTP para download
-    res.setHeader(
-      'Content-Type',
-      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-    );
-    res.setHeader(
-      'Content-Disposition',
-      'attachment; filename="produtos.xlsx"'
-    );
-
-    // 6) Grava direto no fluxo de resposta
-    await wb.xlsx.write(res);
-    res.end();                 // encerra a stream
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
+// ==================================
+// 📦 ROTAS DE PRODUTO
+// ==================================
 
 // POST - cadastrar produto
-app.post('/produtos', async (req, res) => {
+app.post('/produtos', autenticarUsuario, async (req, res) => {
   const { nome, descricao, qntd_estoq } = req.body;
+
   try {
     const result = await db.query(
       'INSERT INTO produto (nome, descricao, qntd_estoq) VALUES ($1, $2, $3) RETURNING id_produto',
@@ -305,45 +45,29 @@ app.post('/produtos', async (req, res) => {
   }
 });
 
-// PUT - atualizar produto
-app.put('/produtos/:id', async (req, res) => {
+// PUT - atualizar produto e registrar movimentação
+app.put('/produtos/:id', autenticarUsuario, async (req, res) => {
   const { id } = req.params;
-  const { nome, descricao, qntd_estoq, id_usuario } = req.body;
-
-  if (!id_usuario) {
-    return res.status(400).json({ error: 'ID do usuário é obrigatório para log' });
-  }
+  const { nome, descricao, qntd_estoq } = req.body;
 
   try {
-    // 1. Recuperar produto atual para comparar estoque
     const current = await db.query('SELECT qntd_estoq FROM produto WHERE id_produto = $1', [id]);
-
-    if (current.rows.length === 0) {
-      return res.status(404).json({ message: 'Produto não encontrado' });
-    }
+    if (current.rows.length === 0) return res.status(404).json({ message: 'Produto não encontrado' });
 
     const estoqueAnterior = current.rows[0].qntd_estoq;
 
-    // Validação de campos obrigatórios
-    if (qntd_estoq < 0) {
-      return res.status(400).json({ error: 'Estoque não pode ser negativo' });
-      }
-
-    // 2. Atualizar produto
     const result = await db.query(
       'UPDATE produto SET nome = $1, descricao = $2, qntd_estoq = $3 WHERE id_produto = $4',
       [nome, descricao, qntd_estoq, id]
     );
 
-    // 3. Se houve mudança de estoque, registra log
+    // Se mudou estoque, registra na movimentação
     const diferenca = qntd_estoq - estoqueAnterior;
-
     if (diferenca !== 0) {
       const tipo = diferenca > 0 ? 'e' : 's';
-
       await db.query(
-        'INSERT INTO movimentacao (id_usuario, id_produto, tipo, qntd) VALUES ($1, $2, $3, $4)',
-        [id_usuario, id, tipo, Math.abs(diferenca)]
+        'INSERT INTO movimentacao (user_id, id_produto, tipo, qntd) VALUES ($1, $2, $3, $4)',
+        [req.user.id, id, tipo, Math.abs(diferenca)]
       );
     }
 
@@ -353,23 +77,68 @@ app.put('/produtos/:id', async (req, res) => {
   }
 });
 
-// DELETE - excluir produto
-app.delete('/produtos/:id', async (req, res) => {
-  const { id } = req.params;
+// GET - listar produtos paginados
+app.get('/produtos', async (req, res) => {
+  const page = Math.max(parseInt(req.query.page) || 1, 1);
+  const limit = Math.max(parseInt(req.query.limit) || 10, 1);
+  const offset = (page - 1) * limit;
+
   try {
-    const result = await db.query('DELETE FROM produto WHERE id_produto = $1', [id]);
+    const total = await db.query('SELECT COUNT(*) FROM produto');
+    const produtos = await db.query(
+      'SELECT id_produto AS id, nome, descricao, qntd_estoq FROM produto ORDER BY id_produto LIMIT $1 OFFSET $2',
+      [limit, offset]
+    );
 
-    if (result.rowCount === 0) {
-      return res.status(404).json({ message: 'Produto não encontrado' });
-    }
-
-    res.json({ message: 'Produto excluído!' });
+    res.json({
+      results: produtos.rows,
+      page: {
+        current: page,
+        total_items: parseInt(total.rows[0].count),
+        total_pages: Math.ceil(parseInt(total.rows[0].count) / limit),
+      }
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
+// GET - exportar produtos para Excel
+app.get('/produtos/excel', async (req, res) => {
+  try {
+    const { rows: produtos } = await db.query('SELECT id_produto AS id, nome, descricao, qntd_estoq FROM produto');
 
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet('Produtos');
+    ws.columns = [
+      { header: 'ID', key: 'id', width: 10 },
+      { header: 'Nome', key: 'nome', width: 30 },
+      { header: 'Descrição', key: 'descricao', width: 50 },
+      { header: 'Qtd. Estoque', key: 'qntd_estoq', width: 15 }
+    ];
+
+    produtos.forEach(prod => ws.addRow(prod));
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', 'attachment; filename="produtos.xlsx"');
+
+    await wb.xlsx.write(res);
+    res.end();
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ==================================
+// 🔐 ROTAS DE USUÁRIO AUTENTICADO
+// ==================================
+app.get('/me', autenticarUsuario, (req, res) => {
+  res.json({ usuario: req.user });
+});
+
+// ==================================
+// 🟢 INICIAR SERVIDOR
+// ==================================
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`API rodando na porta ${PORT}`);
