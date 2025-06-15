@@ -1,34 +1,33 @@
 // src/app.js
 import express from 'express';
 import cors from 'cors';
-import cookieParser from 'cookie-parser';
 import { authHandler, readSession } from './auth.js';
 import dotenv from 'dotenv';
 import { Pool } from 'pg';
 import ExcelJS from 'exceljs';
+import { randomUUID } from 'crypto';
 
 dotenv.config();
 
 const app = express();
 
-// 1️⃣ CORS global + preflight — antes de qualquer coisa
+// 1️⃣ CORS global + preflight — antes de qualquer rota
 app.use(cors({
-  origin: 'http://localhost:3000',
-  credentials: true
+  origin: 'http://localhost:3000',  // domínio/porta do seu front
+  credentials: true                 // habilita Access-Control-Allow-Credentials
 }));
 app.options('*', cors({
   origin: 'http://localhost:3000',
   credentials: true
 }));
 
-// 2️⃣ Cookie parser — se você usa cookies de sessão HttpOnly
-app.use(cookieParser());
-
-// 3️⃣ Rotas de autenticação (Better Auth) — deve vir ANTES do express.json()
-app.all('/api/auth/*', authHandler);
-
-// 4️⃣ Parser de JSON — somente para as rotas *depois* do authHandler
+// 2️⃣ Parser de JSON — antes do authHandler e de qualquer rota que leia body
 app.use(express.json());
+
+// 3️⃣ Cookie parser — para que o Better Auth possa ler cookies de sessão
+
+// 4️⃣ Rotas de autenticação (Better Auth)
+app.all('/api/auth/*', authHandler);
 
 // 5️⃣ Conexão com o banco (Postgres via Neon)
 const db = new Pool({
@@ -36,7 +35,7 @@ const db = new Pool({
   ssl: { rejectUnauthorized: false },
 });
 
-// 6️⃣ Middleware de sessão — protege as rotas que precisam de login
+// 6️⃣ Middleware de sessão — usa o readSession para proteger rotas
 async function autenticarUsuario(req, res, next) {
   const session = await readSession(req);
   if (!session) return res.status(401).json({ error: 'Não autenticado' });
