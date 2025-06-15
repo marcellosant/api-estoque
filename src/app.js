@@ -11,24 +11,29 @@ dotenv.config();
 
 const app = express();
 
-// 1️⃣ CORS global — precisa estar aqui antes de qualquer rota
+// 1️⃣ CORS global + preflight — antes de qualquer rota
 app.use(cors({
-  origin: 'http://localhost:3000',  // ou o domínio/porta exatos do seu front
+  origin: 'http://localhost:3000',  // domínio/porta do seu front
   credentials: true                 // habilita Access-Control-Allow-Credentials
 }));
+app.options('*', cors({
+  origin: 'http://localhost:3000',
+  credentials: true
+}));
 
-
-// 3️⃣ Agora o Better Auth
-app.all('/api/auth/*', authHandler);
+// 2️⃣ Parser de JSON — antes de authHandler e demais rotas que usam body
 app.use(express.json());
 
-// conexão com o banco
+// 3️⃣ Rotas de autenticação (Better Auth)
+app.all('/api/auth/*', authHandler);
+
+// 4️⃣ Conexão com o banco (Postgres via Neon)
 const db = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false },
 });
 
-// middleware de sessão
+// 5️⃣ Middleware de sessão — usa o readSession para proteger rotas
 async function autenticarUsuario(req, res, next) {
   const session = await readSession(req);
   if (!session) return res.status(401).json({ error: 'Não autenticado' });
@@ -113,9 +118,9 @@ app.get('/produtos/excel', async (req, res) => {
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet('Produtos');
     ws.columns = [
-      { header: 'ID', key: 'id', width: 10 },
-      { header: 'Nome', key: 'nome', width: 30 },
-      { header: 'Descrição', key: 'descricao', width: 50 },
+      { header: 'ID',           key: 'id',         width: 10 },
+      { header: 'Nome',         key: 'nome',       width: 30 },
+      { header: 'Descrição',    key: 'descricao',  width: 50 },
       { header: 'Qtd. Estoque', key: 'qntd_estoq', width: 15 },
     ];
     produtos.forEach(p => ws.addRow(p));
@@ -129,7 +134,7 @@ app.get('/produtos/excel', async (req, res) => {
   }
 });
 
-// rota do usuário logado
+// Rota do usuário logado
 app.get('/me', autenticarUsuario, (req, res) => {
   res.json({ usuario: req.user });
 });

@@ -11,18 +11,32 @@ const db = new Pool({
   ssl: { rejectUnauthorized: false },
 });
 
-const auth = betterAuth({
+export const auth = betterAuth({
   database: db,
   emailAndPassword: {
     enabled: true,
-    requireEmailVerification: false
-  }
+    requireEmailVerification: false,
+    // autoSignIn: false,       // caso queira desativar o login automático após sign-up
+  },
+  // Permite que seu front em localhost:3000 receba o cookie
+  trustedOrigins: ['http://localhost:3000'],
+  advanced: {
+    // Configura o cookie para contexto cross-site
+    defaultCookieAttributes: {
+      path:     '/',
+      httpOnly: true,
+      sameSite: 'none',    // ⬅️ necessário para cookies cross-site
+      secure:   true       // ⬅️ necessário quando sameSite=None
+    }
+  },
+  // Garante secure mesmo em ambiente de desenvolvimento
+  useSecureCookies: true
 });
 
 // middleware Express gerado pelo Better Auth
 export const authHandler = toNodeHandler(auth);
 
-// aqui, “forçamos” todo e-mail como verificado
+// “Forçamos” todo e-mail como verificado
 export async function readSession(req) {
   const session = await auth.readSession(req);
   if (!session) return null;
