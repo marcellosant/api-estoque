@@ -54,7 +54,10 @@ export async function readSession(req) {
   }
 
   // 3) agora sim pega a sessão
-  const session = resp.data.session;
+  const session = {
+    ...resp.session,
+    user: { ...resp.user }
+  };
 
   // 4) busca a role no seu próprio banco
   const { rows } = await db.query(
