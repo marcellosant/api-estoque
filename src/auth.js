@@ -25,15 +25,16 @@ export const auth = betterAuth({
     process.env.FRONT_URL,
     'http://localhost:3000',
   ].filter(Boolean),
-  advanced: {
+    advanced: {
     defaultCookieAttributes: {
       path:     '/',
       httpOnly: true,
-      sameSite: 'none',
-      secure:   true,
+      sameSite: 'none',                              // mantém para cross-site
+      secure:   process.env.NODE_ENV === 'production',// apenas em prod
+      // domain: undefined                           // omitido em dev (host-only)
     },
   },
-  useSecureCookies: true,
+  useSecureCookies: process.env.NODE_ENV === 'production',
 });
 
 // monta o handler do Better Auth
