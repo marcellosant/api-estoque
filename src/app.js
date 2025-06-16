@@ -300,7 +300,31 @@ app.put('/usuarios/:id', async (req, res) => {
   }
 });
 
+// rota para excluir usuário
+app.delete('/usuarios/:id', async (req, res) => {
+  const { id } = req.params;
 
+  try {
+    // tenta remover o usuário e retorna o id removido
+    const deleteRes = await db.query(
+      `DELETE FROM "user"
+       WHERE id = $1
+       RETURNING id;`,
+      [id]
+    );
+
+    if (deleteRes.rowCount === 0) {
+      // nenhum registro removido → usuário não existe
+      return res.status(404).json({ error: 'Usuário não encontrado.' });
+    }
+
+    // sucesso → sem conteúdo
+    res.status(204).send();
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // rota do usuário logado
 app.get('/me', autenticarUsuario, (req, res) => {
