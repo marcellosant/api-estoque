@@ -315,7 +315,14 @@ app.delete('/usuarios/:id', async (req, res) => {
       [id]
     );
 
-    // 2. remove o usuário
+    // 2. remove account do usuário
+    await client.query(
+      `DELETE FROM account
+       WHERE "userId" = $1;`,
+      [id]
+    );
+
+    // 3. remove o usuário
     const deleteRes = await client.query(
       `DELETE FROM "user"
        WHERE id = $1
