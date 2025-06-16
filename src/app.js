@@ -63,7 +63,7 @@ async function autenticarUsuario(req, res, next) {
 // ROTAS DE PRODUTO
 // =======================
 
-app.post('/produtos', autenticarUsuario, async (req, res) => {
+app.post('/produtos', async (req, res) => {
   console.log('Recebido POST /produtos com body:', req.body);
   const { nome, descricao, qntd_estoq } = req.body;
   try {
@@ -79,7 +79,7 @@ app.post('/produtos', autenticarUsuario, async (req, res) => {
 });
 
 
-app.put('/produtos/:id', autenticarUsuario, async (req, res) => {
+app.put('/produtos/:id', async (req, res) => {
   const { id } = req.params;
   const { nome, descricao, qntd_estoq } = req.body;
   try {
