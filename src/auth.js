@@ -36,21 +36,27 @@ export const auth = betterAuth({
 export const authHandler = toNodeHandler(auth);
 
 // agora usa o client interno para ler a sessão a partir do cookie
+// src/auth.js
 export async function readSession(req) {
-  // 1) pega a sessão “pura” do Better Auth
-  const { data: { session } = {} } = await auth.api.getSession({
+  // 1) tenta pegar a resposta inteira
+  const resp = await auth.api.getSession({
     headers: { cookie: req.headers.cookie || '' },
   });
-  if (!session) return null;
 
-  // 2) busca o type na sua tabela “user” (ou “usuario”)
+  // 2) se não vier nada ou não vier data.session, retorna null
+  if (!resp || !resp.data || !resp.data.session) {
+    return null;
+  }
+
+  // 3) agora sim pega a sessão
+  const session = resp.data.session;
+
+  // 4) busca a role no seu próprio banco
   const { rows } = await db.query(
     'SELECT type FROM "user" WHERE id = $1',
     [ session.user.id ]
   );
-  const role = rows[0]?.type ?? 'user';
+  session.user.role = rows[0]?.type ?? 'user';
 
-  // 3) anexa em session.user
-  session.user.role = role;
   return session;
 }
