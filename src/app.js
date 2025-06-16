@@ -24,21 +24,25 @@ app.use(cors({
 }));
 app.options('*', cors({ origin: ALLOWED, credentials: true }));
 
-app.post(
-  '/api/auth/sign-out',
-  authHandler,                   // run the built-in sign-out logic first
-  (req, res) => {
-    // now expire the cookie on the client
-    res.clearCookie('better-auth.session_token', {
-      path:     '/', 
-      httpOnly: true, 
-      sameSite: 'none', 
-      secure:   true
+app.post('/api/auth/sign-out', async (req, res) => {
+  try {
+    // 1. invalidate the session server-side
+    await auth.api.signOut({
+      headers: { cookie: req.headers.cookie || '' }
     });
-    // return a real JSON body that the client can parse
-    return res.status(200).json({ signedOut: true });
+  } catch (err) {
+    console.error('Error calling auth.api.signOut:', err);
   }
-);
+  // 2. clear the browser cookie
+  res.clearCookie('better-auth.session_token', {
+    path:     '/',
+    httpOnly: true,
+    sameSite: 'none',
+    secure:   true
+  });
+  // 3. return valid JSON
+  return res.status(200).json({ signedOut: true });
+});
 
 // 1) Better Auth endpoints
 app.all('/api/auth/*', authHandler);
