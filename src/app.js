@@ -336,7 +336,7 @@ app.delete('/usuarios/:id', async (req, res) => {
     }
 
     await client.query('COMMIT');
-    return res.status(204).send();
+    return res.status(200).json({ message: 'Usuário deletado com sucesso.' });
   } catch (err) {
     await client.query('ROLLBACK');
     console.error(err);
