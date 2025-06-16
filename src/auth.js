@@ -43,34 +43,24 @@ export const authHandler = toNodeHandler(auth);
 // src/auth.js
 // src/auth.js
 export async function readSession(req) {
-  // 1) pega o cookie cru
   const cookie = req.headers.cookie || '';
-  console.log('→ readSession headers.cookie:', cookie);
+  const resp   = await auth.api.getSession({ headers:{ cookie } });
 
-  // 2) chama o Better Auth
-  const resp = await auth.api.getSession({
-    headers: { cookie }
-  });
-  console.log('→ auth.api.getSession() retornou:', resp);
+  if (!resp?.session || !resp?.user) return null;
 
-  // 3) se não vier session ou user, aborta
-  if (!resp || !resp.session || !resp.user) {
-    return null;
-  }
+  // campos de sessão sem o user
+  const session = { ...resp.session };
 
-  // 4) monta o objeto `session` como o seu front espera
-  const session = {
-    ...resp.session
-  };
+  // objeto user separado
+  const user = { ...resp.user };
 
-   const user = { ...resp.user };
-
-  // 5) busca a role no seu próprio banco e anexa
+  // aqui use user.id, não session.user.id
   const { rows } = await db.query(
-    'SELECT type FROM "user" WHERE id = $1',
-    [ session.user.id ]
+    'SELECT "type" FROM "user" WHERE id = $1',
+    [ user.id ]
   );
-  session.user.role = rows[0]?.type ?? 'user';
+  user.role = rows[0]?.type ?? 'user';
 
-  return {session, user};
+  // devolva ambos
+  return { session, user };
 }
