@@ -46,7 +46,7 @@ app.post('/api/auth/sign-out', async (req, res) => {
 
 
 
-// retorna a sessão já com `role`
+// retorna a sessão e o usuário logado
 app.get('/api/auth/get-session', async (req, res) => {
   const result = await readSession(req);
   if (!result) {
@@ -253,6 +253,53 @@ app.get('/usuarios', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+// rota para fazer alteracoes no usuario
+app.put('/usuarios/:id', async (req, res) => {
+  const { id } = req.params;
+  const { name, email } = req.body;
+
+  // validações básicas
+  if (!name || !email) {
+    return res.status(400).json({ error: 'Os campos name e email são obrigatórios.' });
+  }
+
+  try {
+    // atualiza name, email e updated_at
+    const updateRes = await db.query(
+      `UPDATE "user"
+         SET name       = $1,
+             email      = $2,
+             updated_at = NOW()
+       WHERE id = $3
+       RETURNING
+         id,
+         name,
+         email,
+         email_verified   AS "emailVerified",
+         image,
+         created_at       AS "createdAt",
+         updated_at       AS "updatedAt",
+         type;`,
+      [name, email, id]
+    );
+
+    if (updateRes.rows.length === 0) {
+      return res.status(404).json({ error: 'Usuário não encontrado.' });
+    }
+
+    // devolve o usuário atualizado
+    res.json(updateRes.rows[0]);
+  } catch (err) {
+    // trata erro de chave única (e-mail duplicado)
+    if (err.code === '23505' && err.constraint === 'user_email_key') {
+      return res.status(409).json({ error: 'Este email já está em uso.' });
+    }
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 
 
 // rota do usuário logado
