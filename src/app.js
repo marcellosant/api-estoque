@@ -1,7 +1,7 @@
 // src/app.js
 import express from 'express';
 import cors from 'cors';
-import { authHandler, readSession } from './auth.js';
+import { auth, authHandler, readSession } from './auth.js';
 import dotenv from 'dotenv';
 import { Pool } from 'pg';
 import ExcelJS from 'exceljs';
@@ -44,7 +44,7 @@ app.post('/api/auth/sign-out', async (req, res) => {
   return res.status(200).json({ signedOut: true });
 });
 
-import { readSession } from './auth.js';
+
 
 // retorna a sessão já com `role`
 app.get('/api/auth/get-session', async (req, res) => {
