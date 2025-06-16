@@ -44,6 +44,19 @@ app.post('/api/auth/sign-out', async (req, res) => {
   return res.status(200).json({ signedOut: true });
 });
 
+import { readSession } from './auth.js';
+
+// retorna a sessão já com `role`
+app.get('/api/auth/get-session', async (req, res) => {
+  try {
+    const session = await readSession(req);
+    return res.json({ data: { session }, error: null });
+  } catch (err) {
+    console.error('Erro em GET /api/auth/get-session:', err);
+    return res.json({ data: { session: null }, error: err.message });
+  }
+});
+
 // 1) Better Auth endpoints
 app.all('/api/auth/*', authHandler);
 
