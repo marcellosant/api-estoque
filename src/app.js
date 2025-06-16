@@ -210,6 +210,51 @@ app.delete('/produtos/:id', async (req, res) => {const { id } = req.params;
   }
 });
 
+app.get('/usuarios', async (req, res) => {
+  // 1) lê pagina e limite da query string, com valores mínimos
+  const page   = Math.max(parseInt(req.query.page, 10) || 1, 1);
+  const limit  = Math.max(parseInt(req.query.limit, 10) || 10, 1);
+  const offset = (page - 1) * limit;
+
+  try {
+    // 2) conta o total de registros
+    const totalRes = await db.query('SELECT COUNT(*) FROM "user"');
+    const totalItems = parseInt(totalRes.rows[0].count, 10);
+
+    // 3) busca a página desejada, alias nos campos camelCase
+    const usersRes = await db.query(
+      `SELECT
+         id,
+         name,
+         email,
+         email_verified   AS "emailVerified",
+         image,
+         created_at       AS "createdAt",
+         updated_at       AS "updatedAt",
+         type
+       FROM "user"
+       ORDER BY id
+       LIMIT $1
+       OFFSET $2`,
+      [limit, offset]
+    );
+
+    // 4) devolve o JSON no mesmo formato do /produtos
+    res.json({
+      results: usersRes.rows,
+      page: {
+        current:     page,
+        total_items: totalItems,
+        total_pages: Math.ceil(totalItems / limit),
+      },
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
 // rota do usuário logado
 app.get('/me', autenticarUsuario, (req, res) => {
   res.json({ usuario: req.user });
