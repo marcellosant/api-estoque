@@ -197,17 +197,41 @@ app.get('/produtos/excel', async (req, res) => {
 });
 
 // DELETE - excluir produto
-app.delete('/produtos/:id', async (req, res) => {const { id } = req.params;
-  try {
-    const result = await db.query('DELETE FROM produto WHERE id_produto = $1', [id]);
+app.delete('/produtos/:id', async (req, res) => {
+  const { id } = req.params;
+  const client = await db.connect();
 
-    if (result.rowCount === 0) {
-      return res.status(404).json({ message: 'Produto não encontrado' });
+  try {
+    await client.query('BEGIN');
+
+    // 1) remove todas as movimentações deste produto
+    await client.query(
+      `DELETE FROM movimentacao
+       WHERE id_produto = $1;`,
+      [id]
+    );
+
+    // 2) remove o produto
+    const deleteRes = await client.query(
+      `DELETE FROM produto
+       WHERE id_produto = $1
+       RETURNING id_produto;`,
+      [id]
+    );
+
+    if (deleteRes.rowCount === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ message: 'Produto não encontrado.' });
     }
 
-    res.json({ message: 'Produto excluído!' });
+    await client.query('COMMIT');
+    return res.status(200).json({ message: 'Produto excluído com sucesso!' });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    await client.query('ROLLBACK');
+    console.error(err);
+    return res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
   }
 });
 
