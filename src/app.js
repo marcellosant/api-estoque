@@ -1,3 +1,4 @@
+// src/app.js
 import express from 'express';
 import cors from 'cors';
 import { authHandler, readSession } from './auth.js';
@@ -9,47 +10,53 @@ dotenv.config();
 
 const app = express();
 
-// 👇 Defina em .env: FRONT_URL=https://meu-front.onrender.com
-const allowedOrigins = [
-  process.env.FRONT_URL,
-  'http://localhost:3000'
-];
+// DEBUG: loga todas as requisições
+app.use((req, res, next) => {
+  console.log(`→ ${req.method} ${req.originalUrl}`);
+  next();
+});
 
+// CORS global + preflight
+const FRONT_URL = process.env.FRONT_URL;  // ex: https://meu-front.onrender.com
+const ALLOWED = [FRONT_URL, 'http://localhost:3000'];
 app.use(cors({
   origin: (origin, callback) => {
-    // em dev o origin pode vir vazio (direct curl), então permitimos também
-    if (!origin || allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      callback(new Error('Não autorizado pela CORS'));
+    // em dev origin pode vir undefined (cURL), então permitimos também
+    if (!origin || ALLOWED.includes(origin)) {
+      return callback(null, true);
     }
+    callback(new Error('Não autorizado pela CORS'));
   },
   credentials: true
 }));
-// preflight para todas as rotas
-app.options('*', cors({
-  origin: allowedOrigins,
-  credentials: true
-}));
+app.options('*', cors({ origin: ALLOWED, credentials: true }));
 
-// 1️⃣ Autenticação Better Auth ANTES de parsear JSON
+// Monta o handler do Better Auth ANTES de parsear JSON
 app.all('/api/auth/*', authHandler);
 
-// 2️⃣ Parser de JSON para as rotas abaixo (produtos, etc)
+// Parser de JSON para *todas* as demais rotas (produtos, etc)
 app.use(express.json());
 
-// 3️⃣ Conexão com o banco (Postgres via Neon)
+// Conexão com o banco (Postgres via Neon)
 const db = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false },
 });
 
-// 4️⃣ Middleware de sessão — protege rotas que precisam de login
+// Middleware de sessão — agora com try/catch pra não vazar um hang
 async function autenticarUsuario(req, res, next) {
-  const session = await readSession(req);
-  if (!session) return res.status(401).json({ error: 'Não autenticado' });
-  req.user = session.user;
-  next();
+  try {
+    const session = await readSession(req);
+    if (!session) {
+      console.warn('Usuário não autenticado em', req.originalUrl);
+      return res.status(401).json({ error: 'Não autenticado' });
+    }
+    req.user = session.user;
+    next();
+  } catch (err) {
+    console.error('Erro interno em autenticarUsuario:', err);
+    res.status(500).json({ error: 'Erro interno ao validar sessão' });
+  }
 }
 
 // =======================
@@ -57,6 +64,7 @@ async function autenticarUsuario(req, res, next) {
 // =======================
 
 app.post('/produtos', autenticarUsuario, async (req, res) => {
+  console.log('Recebido POST /produtos com body:', req.body);
   const { nome, descricao, qntd_estoq } = req.body;
   try {
     const result = await db.query(
@@ -65,9 +73,11 @@ app.post('/produtos', autenticarUsuario, async (req, res) => {
     );
     res.status(201).json({ message: 'Produto cadastrado!', id: result.rows[0].id_produto });
   } catch (err) {
+    console.error('Erro ao inserir produto:', err);
     res.status(500).json({ error: err.message });
   }
 });
+
 
 app.put('/produtos/:id', autenticarUsuario, async (req, res) => {
   const { id } = req.params;
@@ -150,6 +160,8 @@ app.get('/me', autenticarUsuario, (req, res) => {
   res.json({ usuario: req.user });
 });
 
-// inicia servidor
+// =======================
+// INICIA SERVIDOR
+// =======================
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`API rodando na porta ${PORT}`));
