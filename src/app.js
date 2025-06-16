@@ -195,6 +195,21 @@ app.get('/produtos/excel', async (req, res) => {
   }
 });
 
+// DELETE - excluir produto
+app.delete('/produtos/:id', async (req, res) => {const { id } = req.params;
+  try {
+    const result = await db.query('DELETE FROM produto WHERE id_produto = $1', [id]);
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ message: 'Produto não encontrado' });
+    }
+
+    res.json({ message: 'Produto excluído!' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // rota do usuário logado
 app.get('/me', autenticarUsuario, (req, res) => {
   res.json({ usuario: req.user });
