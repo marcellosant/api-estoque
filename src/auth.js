@@ -20,7 +20,7 @@ export const auth = betterAuth({
   trustedOrigins: [
     process.env.FRONT_URL,
     'http://localhost:3000',
-  ],
+  ].filter(Boolean),
   advanced: {
     defaultCookieAttributes: {
       path:     '/',
