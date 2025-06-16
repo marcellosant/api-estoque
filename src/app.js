@@ -136,8 +136,9 @@ app.put('/produtos/:id', async (req, res) => {
     if (diferenca !== 0) {
       const tipo = diferenca > 0 ? 'e' : 's';
       await db.query(
-        'INSERT INTO movimentacao (user_id, id_produto, tipo, qntd) VALUES ($1, $2, $3, $4)',
-        [req.user.id, id, tipo, Math.abs(diferenca)]
+        `INSERT INTO movimentacao (id_produto, tipo, qntd)
+         VALUES ($1, $2, $3)`,
+        [id, tipo, Math.abs(diferenca)]
       );
     }
 
