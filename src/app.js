@@ -49,11 +49,26 @@ app.post('/api/auth/sign-out', async (req, res) => {
 // retorna a sessão já com `role`
 app.get('/api/auth/get-session', async (req, res) => {
   try {
-    const session = await readSession(req);
-    return res.json({ data: { session }, error: null });
+    const result = await readSession(req);
+    if (!result) {
+      return res.json({
+        data: { session: null, user: null },
+        error: null
+      });
+    }
+
+    const { session, user } = result;
+    return res.json({
+      data: { session, user },
+      error: null
+    });
+
   } catch (err) {
     console.error('Erro em GET /api/auth/get-session:', err);
-    return res.json({ data: { session: null }, error: err.message });
+    return res.json({
+      data: { session: null, user: null },
+      error: err.message
+    });
   }
 });
 

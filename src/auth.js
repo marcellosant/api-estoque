@@ -60,9 +60,10 @@ export async function readSession(req) {
 
   // 4) monta o objeto `session` como o seu front espera
   const session = {
-    ...resp.session,
-    user: { ...resp.user }
+    ...resp.session
   };
+
+   const user = { ...resp.user };
 
   // 5) busca a role no seu próprio banco e anexa
   const { rows } = await db.query(
@@ -71,5 +72,5 @@ export async function readSession(req) {
   );
   session.user.role = rows[0]?.type ?? 'user';
 
-  return session;
+  return {session, user};
 }
