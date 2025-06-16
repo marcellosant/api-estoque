@@ -13,6 +13,10 @@ const db = new Pool({
 
 export const auth = betterAuth({
   database: db,
+
+    jwt: {
+    secret: process.env.BETTER_AUTH_JWT_SECRET,
+  },
   emailAndPassword: {
     enabled: true,
     requireEmailVerification: false,
@@ -39,10 +43,11 @@ export const authHandler = toNodeHandler(auth);
 // src/auth.js
 export async function readSession(req) {
   // 1) tenta pegar a resposta inteira
+  console.log('readSession → headers.cookie:', req.headers.cookie);
   const resp = await auth.api.getSession({
     headers: { cookie: req.headers.cookie || '' },
   });
-
+  console.log(' auth.api.getSession() retornou:', JSON.stringify(resp));
   // 2) se não vier nada ou não vier data.session, retorna null
   if (!resp || !resp.data || !resp.data.session) {
     return null;
