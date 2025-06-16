@@ -339,6 +339,51 @@ app.delete('/usuarios/:id', async (req, res) => {
   }
 });
 
+// get movimentações
+app.get('/movimentacoes', async (req, res) => {
+  // paginação
+  const page   = Math.max(parseInt(req.query.page, 10) || 1, 1);
+  const limit  = Math.max(parseInt(req.query.limit, 10) || 10, 1);
+  const offset = (page - 1) * limit;
+
+  try {
+    // total de registros
+    const totalRes = await db.query('SELECT COUNT(*) FROM movimentacao');
+    const totalItems = parseInt(totalRes.rows[0].count, 10);
+
+    // busca a página de movimentações, já fazendo JOIN para puxar o nome do produto
+    const movRes = await db.query(
+      `SELECT
+         m.id_movi        AS id,
+         m.id_produto     AS produtoId,
+         p.nome           AS produtoNome,
+         m.tipo           AS tipo,
+         m.qntd           AS quantidade,
+         m.data           AS dataMovimentacao
+       FROM movimentacao m
+       LEFT JOIN produto p
+         ON p.id_produto = m.id_produto
+       ORDER BY m.data DESC
+       LIMIT $1 OFFSET $2`,
+      [limit, offset]
+    );
+
+    // monta o JSON de resposta
+    res.json({
+      results: movRes.rows,
+      page: {
+        current:     page,
+        total_items: totalItems,
+        total_pages: Math.ceil(totalItems / limit),
+      },
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
 // =======================
 // INICIA SERVIDOR
 // =======================
