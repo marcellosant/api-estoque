@@ -7,54 +7,57 @@ import { Pool } from 'pg';
 import ExcelJS from 'exceljs';
 
 dotenv.config();
-
 const app = express();
 
-// DEBUG: loga todas as requisições
+// Debug logging
 app.use((req, res, next) => {
   console.log(`→ ${req.method} ${req.originalUrl}`);
   next();
 });
 
-// CORS global + preflight
-const FRONT_URL = process.env.FRONT_URL;  // ex: https://meu-front.onrender.com
+// CORS + preflight
+const FRONT_URL = process.env.FRONT_URL;
 const ALLOWED = [FRONT_URL, 'http://localhost:3000'];
 app.use(cors({
-  origin: (origin, callback) => {
-    // em dev origin pode vir undefined (cURL), então permitimos também
-    if (!origin || ALLOWED.includes(origin)) {
-      return callback(null, true);
-    }
-    callback(new Error('Não autorizado pela CORS'));
-  },
-  credentials: true
+  origin: (o, cb) => (!o || ALLOWED.includes(o)) ? cb(null, true) : cb(new Error('CORS Block')),
+  credentials: true,
 }));
 app.options('*', cors({ origin: ALLOWED, credentials: true }));
 
-// Monta o handler do Better Auth ANTES de parsear JSON
+// 1) Better Auth endpoints
 app.all('/api/auth/*', authHandler);
 
-// Parser de JSON para *todas* as demais rotas (produtos, etc)
+// 2) Override sign-out so we can expire the cookie
+app.post('/api/auth/sign-out', authHandler, (req, res) => {
+  // clear the session cookie immediately
+  res.clearCookie('better-auth.session_token', {
+    path:     '/',
+    httpOnly: true,
+    sameSite: 'none',
+    secure:   true,
+  });
+  // send a small JSON so the client can parse it
+  return res.json({ signedOut: true });
+});
+
+// 3) JSON parser for your own routes
 app.use(express.json());
 
-// Conexão com o banco (Postgres via Neon)
+// 4) DB connection
 const db = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false },
 });
 
-// Middleware de sessão — agora com try/catch pra não vazar um hang
+// 5) Protect routes
 async function autenticarUsuario(req, res, next) {
   try {
     const session = await readSession(req);
-    if (!session) {
-      console.warn('Usuário não autenticado em', req.originalUrl);
-      return res.status(401).json({ error: 'Não autenticado' });
-    }
+    if (!session) return res.status(401).json({ error: 'Não autenticado' });
     req.user = session.user;
     next();
   } catch (err) {
-    console.error('Erro interno em autenticarUsuario:', err);
+    console.error('Erro validar sessão:', err);
     res.status(500).json({ error: 'Erro interno ao validar sessão' });
   }
 }
