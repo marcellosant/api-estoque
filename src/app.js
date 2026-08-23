@@ -20,11 +20,24 @@ const ALLOWED = [
   ...(process.env.FRONT_URL || '').split(',').map((s) => s.trim()).filter(Boolean),
   'http://localhost:3000',
 ];
-app.use(cors({
-  origin: (o, cb) => (!o || ALLOWED.includes(o)) ? cb(null, true) : cb(new Error('CORS Block')),
+
+// Vercel gera uma URL nova a cada deploy/preview, então além de origens
+// exatas o FRONT_URL aceita padrões com wildcard (ex: "*.vercel.app",
+// "*-marcellosants-projects.vercel.app"), no mesmo formato que o Better Auth usa.
+function patternToRegex(pattern) {
+  const escaped = pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*');
+  return new RegExp(`^${escaped}$`);
+}
+function originAllowed(origin) {
+  return ALLOWED.some((pattern) => patternToRegex(pattern).test(origin));
+}
+
+const corsOptions = {
+  origin: (o, cb) => (!o || originAllowed(o)) ? cb(null, true) : cb(new Error('CORS Block')),
   credentials: true,
-}));
-app.options('*', cors({ origin: ALLOWED, credentials: true }));
+};
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
 
 app.post('/api/auth/sign-out', async (req, res) => {
   try {
