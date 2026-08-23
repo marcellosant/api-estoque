@@ -16,8 +16,10 @@ app.use((req, res, next) => {
 });
 
 // CORS + preflight
-const FRONT_URL = process.env.FRONT_URL;
-const ALLOWED = [FRONT_URL, 'http://localhost:3000'];
+const ALLOWED = [
+  ...(process.env.FRONT_URL || '').split(',').map((s) => s.trim()).filter(Boolean),
+  'http://localhost:3000',
+];
 app.use(cors({
   origin: (o, cb) => (!o || ALLOWED.includes(o)) ? cb(null, true) : cb(new Error('CORS Block')),
   credentials: true,

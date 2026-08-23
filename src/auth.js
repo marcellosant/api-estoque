@@ -22,9 +22,9 @@ export const auth = betterAuth({
     requireEmailVerification: false,
   },
   trustedOrigins: [
-    process.env.FRONT_URL,
+    ...(process.env.FRONT_URL || '').split(',').map((s) => s.trim()).filter(Boolean),
     'http://localhost:3000',
-  ].filter(Boolean),
+  ],
     advanced: {
     defaultCookieAttributes: {
       path:     '/',
